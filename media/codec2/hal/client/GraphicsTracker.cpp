@@ -283,8 +283,10 @@ GraphicsTracker::BufferCache::~BufferCache() {
 }
 
 void GraphicsTracker::BufferCache::waitOnSlot(int slot) {
-    // TODO: log
-    CHECK(0 <= slot && slot < kNumSlots);
+    if (slot < 0 || slot >= kNumSlots) {
+        ALOGE("GraphicsTracker: invalid slot %d in waitOnSlot", slot);
+        return;
+    }
     BlockedSlot *p = &mBlockedSlots[slot];
     std::unique_lock<std::mutex> l(p->l);
     while (p->blocked) {
@@ -293,7 +295,10 @@ void GraphicsTracker::BufferCache::waitOnSlot(int slot) {
 }
 
 void GraphicsTracker::BufferCache::blockSlot(int slot) {
-    CHECK(0 <= slot && slot < kNumSlots);
+    if (slot < 0 || slot >= kNumSlots) {
+        ALOGE("GraphicsTracker: invalid slot %d in blockSlot", slot);
+        return;
+    }
     ALOGV("block slot %d", slot);
     BlockedSlot *p = &mBlockedSlots[slot];
     std::unique_lock<std::mutex> l(p->l);
@@ -301,7 +306,10 @@ void GraphicsTracker::BufferCache::blockSlot(int slot) {
 }
 
 void GraphicsTracker::BufferCache::unblockSlot(int slot) {
-    CHECK(0 <= slot && slot < kNumSlots);
+    if (slot < 0 || slot >= kNumSlots) {
+        ALOGE("GraphicsTracker: invalid slot %d in unblockSlot", slot);
+        return;
+    }
     ALOGV("unblock slot %d", slot);
     BlockedSlot *p = &mBlockedSlots[slot];
     std::unique_lock<std::mutex> l(p->l);
@@ -842,6 +850,12 @@ c2_status_t GraphicsTracker::_allocate(const std::shared_ptr<BufferCache> &cache
         ALOGE("BQ in inconsistent status. dequeueBuffer() error %d", (int)status);
         return C2_CORRUPTED;
     }
+    if (slotId < 0 || slotId >= BufferCache::kNumSlots) {
+        ALOGE("GraphicsTracker: dequeueBuffer() returned status %d with invalid slot %d"
+              " (igbp=%d, generation %u)", (int)status, slotId,
+              (bool)igbp, generation);
+        return C2_CORRUPTED;
+    }
     cache->waitOnSlot(slotId);
     bool exists = false;
     {
@@ -1090,6 +1104,10 @@ c2_status_t GraphicsTracker::requestAttachForRender(const C2ConstGraphicBlock& b
         ::android::status_t status = igbp->attachBuffer(&slotId, grBuf);
         if (status != ::android::OK) {
             res = C2_REFUSED;
+        } else if (slotId < 0 || slotId >= BufferCache::kNumSlots) {
+            ALOGE("GraphicsTracker: attachBuffer() returned status %d with invalid slot %d",
+                  (int)status, slotId);
+            res = C2_BAD_VALUE;
         } else {
             buffer = std::make_shared<BufferItem>(generation, slotId, grBuf, fence);
             if (buffer->mInit) {
